@@ -7,7 +7,10 @@
    "bytes": 43646816,
    "done": false,
    "status": {},
-   "cta_kind": "offer"
+   "cta_kind": "offer",
+   "scheduled_at": "2026-10-03T08:07",
+   "cta_keyword": "KT",
+   "cta_variant": 1
   },
   {
    "file": "KT_LADDER/02_WHY-YOU-HATE-YOUR-RECORDED-VOICE_58s.mp4",
@@ -15,7 +18,11 @@
    "hook": "Why you hate your recorded voice",
    "bytes": 38846454,
    "done": false,
-   "status": {}
+   "status": {},
+   "scheduled_at": "2026-10-02T19:59",
+   "cta_keyword": "WISH",
+   "cta_variant": 0,
+   "cta_kind": "offer"
   }
  ]
 }
