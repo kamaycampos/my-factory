@@ -17,8 +17,8 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PLACEHOLDER = "YOUR-GITHUB-NAME/YOUR-REPO"
-PAGES_PLACEHOLDER = "YOUR-GITHUB-NAME.github.io/YOUR-REPO"
+PLACEHOLDER = "kamaycampos/my-factory"
+PAGES_PLACEHOLDER = "kamaycampos.github.io/my-factory"
 SKIP_DIRS = {".git", "__pycache__"}
 
 

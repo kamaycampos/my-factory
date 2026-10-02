@@ -4,7 +4,7 @@
     python factory/transcripts_index.py mark    # record every transcript that now exists
 """
 import json, os, subprocess, sys
-R = os.environ.get("GITHUB_REPOSITORY", "YOUR-GITHUB-NAME/YOUR-REPO")
+R = os.environ.get("GITHUB_REPOSITORY", "kamaycampos/my-factory")
 sh = lambda *a: subprocess.run(list(a), capture_output=True, text=True)
 sh("gh", "release", "download", "sources", "-R", R, "-p", "sources_index.json", "-D", "/tmp", "--clobber")
 idx = json.load(open("/tmp/sources_index.json"))

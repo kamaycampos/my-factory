@@ -31,7 +31,7 @@ import sys
 import urllib.request
 
 HOME = os.path.expanduser("~/Kamay")
-STATE = ("https://raw.githubusercontent.com/YOUR-GITHUB-NAME/YOUR-REPO/"
+STATE = ("https://raw.githubusercontent.com/kamaycampos/my-factory/"
          "main/state/manifest.json")
 
 
