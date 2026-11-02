@@ -3,42 +3,51 @@ VERSION:2.0
 PRODID:-//kt-machine//EN
 CALSCALE:GREGORIAN
 METHOD:PUBLISH
-X-WR-CALNAME:Posts - Kamay + Awakened Rise
+X-WR-CALNAME:My posts
 X-WR-TIMEZONE:America/New_York
 REFRESH-INTERVAL;VALUE=DURATION:PT30M
 X-PUBLISHED-TTL:PT30M
 BEGIN:VEVENT
 UID:KT_LADDER-01_THE-FIRST-WORD-IS-WISH_68s.mp4@kt-machine
-DTSTAMP:20261102T105003Z
+DTSTAMP:20261102T204237Z
 DTSTART:20261003T120700Z
 DTEND:20261003T122200Z
-SUMMARY:[ ] KAMAY - Saying I want to be a millionaire can backfire. If part of you does not believe it\, the statement fights the picture you have of yourself\, and nothing moves.
+SUMMARY:[ ] MY CLIPS - Saying I want to be a millionaire can backfire. If part of you does not believe it\, the statement fights the picture you have of yourself\, and nothing moves.
 DESCRIPTION:scheduled - KT_LADDER/01_THE-FIRST-WORD-IS-WISH_68s.mp4
 STATUS:TENTATIVE
 END:VEVENT
 BEGIN:VEVENT
 UID:KT_LADDER-02_WHY-YOU-HATE-YOUR-RECORDED-VOICE_58s.mp4@kt-machine
-DTSTAMP:20261102T105003Z
+DTSTAMP:20261102T204237Z
 DTSTART:20261002T235900Z
 DTEND:20261003T001400Z
-SUMMARY:[ ] KAMAY - Everyone says the same thing when they hear a recording of themselves: that is not what I sound like.
+SUMMARY:[ ] MY CLIPS - Everyone says the same thing when they hear a recording of themselves: that is not what I sound like.
 DESCRIPTION:scheduled - KT_LADDER/02_WHY-YOU-HATE-YOUR-RECORDED-VOICE_58s.mp4
 STATUS:TENTATIVE
 END:VEVENT
 BEGIN:VEVENT
+UID:KT_SUCCESS-02_TEN-YEARS-IN-PRISON-WAS-A-GIFT_106s.mp4@kt-machine
+DTSTAMP:20261102T204237Z
+DTSTART:20261102T223700Z
+DTEND:20261102T225200Z
+SUMMARY:[ ] MY CLIPS - Kevin Trudeau spent 10 years in federal prison. He calls it a gift.
+DESCRIPTION:scheduled - KT_SUCCESS/02_TEN-YEARS-IN-PRISON-WAS-A-GIFT_106s.mp4
+STATUS:TENTATIVE
+END:VEVENT
+BEGIN:VEVENT
 UID:queue-runout-kamay@kt-machine
-DTSTAMP:20261102T105003Z
-DTSTART;VALUE=DATE:20261004
-DTEND;VALUE=DATE:20261005
-SUMMARY:!! KAMAY - NO CLIPS LEFT TO POST (2 queued before this)
+DTSTAMP:20261102T204237Z
+DTSTART;VALUE=DATE:20261103
+DTEND;VALUE=DATE:20261104
+SUMMARY:!! NO CLIPS LEFT TO POST (3 queued before this)
 TRANSP:TRANSPARENT
 END:VEVENT
 BEGIN:VEVENT
 UID:queue-warning-kamay@kt-machine
-DTSTAMP:20261102T105003Z
+DTSTAMP:20261102T204237Z
 DTSTART;VALUE=DATE:20261102
 DTEND;VALUE=DATE:20261103
-SUMMARY:!! KAMAY - clips run out in -29 day(s)\, on Sun 04 Oct - make more
+SUMMARY:!! Clips run out in 1 day(s)\, on Tue 03 Nov - make more
 TRANSP:TRANSPARENT
 END:VEVENT
 END:VCALENDAR

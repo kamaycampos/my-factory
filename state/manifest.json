@@ -10,7 +10,8 @@
    "cta_kind": "offer",
    "scheduled_at": "2026-10-03T08:07",
    "cta_keyword": "KT",
-   "cta_variant": 1
+   "cta_variant": 1,
+   "stale": true
   },
   {
    "file": "KT_LADDER/02_WHY-YOU-HATE-YOUR-RECORDED-VOICE_58s.mp4",
@@ -22,7 +23,8 @@
    "scheduled_at": "2026-10-02T19:59",
    "cta_keyword": "WISH",
    "cta_variant": 0,
-   "cta_kind": "offer"
+   "cta_kind": "offer",
+   "stale": true
   },
   {
    "file": "KT_SUCCESS/02_TEN-YEARS-IN-PRISON-WAS-A-GIFT_106s.mp4",
@@ -30,7 +32,11 @@
    "hook": "Why prison was his greatest gift",
    "bytes": 45773828,
    "done": false,
-   "status": {}
+   "status": {},
+   "scheduled_at": "2026-11-02T17:37",
+   "cta_keyword": "WISH",
+   "cta_variant": 0,
+   "cta_kind": "offer"
   }
  ]
 }
