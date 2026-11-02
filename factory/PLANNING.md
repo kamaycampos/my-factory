@@ -5,17 +5,54 @@ Everything else runs by itself on GitHub: stocking episodes from Rumble, transcr
 Your job, once a week, is to choose the clips: write plan files that the factory turns into posts.
 You work alone; nobody is watching. Be excellent, and never guess at facts.
 
+**Work alone, in this one session.** Never use the Agent or Task tool, never start subagents or background
+tasks: read and write every plan yourself, one episode at a time. (6 Oct 2026: a run fanned out 21 agents
+on the second-chance backlog, hit the account's usage limit, and pushed nothing.) **Commit and push after
+each plan passes `check_plan.py`**, to the same branch - the merge job takes each push - so a run that is
+cut off still keeps the plans it finished.
+
 ## Procedure
 1. `pip install -q opencv-python-headless pillow numpy 2>/dev/null` (so the hook lint can load).
 2. `python factory/routine_prep.py --max 4`. This prints the queue depth, downloads and decrypts the next unplanned episodes' transcripts into `work/`, and writes 30-second reading blocks for each.
    - How many episodes to plan: queue over 50 clips = none (report and stop); 30-50 = 2; under 30 = 4-5. The machine posts 6 a day and roughly 1 clip in 4 fails a quality gate, so plan generously when the queue is low.
    - If fewer episodes are ready than you want, plan what's there. If the month's list (`factory/source_plan.json`) is running out, append the next best episodes from the candidates it prints (money lane first), so stocking continues.
 2b. If the prep printed **TAKEN DOWN BY TIKTOK**, those clips were removed from the account. For each one, plan a **replacement** from the same episode: the same lesson, a different moment and a different angle - never the same cut and never the same hook. Say in your report which clip you replaced and how the new one differs.
+2c. **NEW EPISODES COME FIRST (16 Oct 2026).** Plan the new episodes the prep offers (READY TO PLAN) before any re-cut: when the queue is low, at least 2 new episodes with 6-9 clips each. On the live account re-cuts filled whole runs while ready episodes sat unplanned and the queue hit 0 (most re-cuts fail again). Then, if the prep printed **SECOND CHANCES**, re-cut those clips - after the new episodes. The teaching was already judged worth posting and the episode is transcribed; only a gate stopped it. For each episode listed:
+   - Write `factory/plans/ep_<id>_r2.json` (`_r3` if `_r2` exists) with the same `source`, brand = the old brand + `R2` (e.g. `KT_MEMORY` -> `KT_MEMORYR2`), and every clip carrying `"retry_of": "<the key printed, e.g. ep_v6v9urd/WALL-STREET-500-RIVALS>"`.
+   - Fix what the **WHY** line says, in `work/<id>.srt`:
+     - hook lint ("not a direct promise", "opens on a riddle", "no stakes") -> rewrite the hook; keep the cut.
+     - "opens mid-sentence", "ends mid-thought", "ends off the planned words" -> re-find the edges: open on the first words of a complete sentence after a pause, close on the sentence end where the teaching lands; copy `start_words` / `end_words` exactly from the cues.
+     - "word repeated", "phrase scrambled", "(laughing)", "[BLANK_AUDIO]" -> move an edge so the damaged words fall outside the clip; if they sit in the middle of the teaching, skip the clip.
+     - "captions vs the sound", "UNCAPTIONED SPEECH", "too few to judge" -> move both edges to different sentence boundaries (a few seconds re-times every caption). If the gap named is someone else talking, cut so it falls outside.
+   - `tries 2` means this is its last chance: skip it unless you can see the cause and fix it.
+   - Second chances never count toward the number of new episodes. Skip any with `tries 2` unless the cause is obvious. Report how many you re-cut and how many you skipped, and why.
+2d. If the prep printed **SECOND PASS**, those episodes were already cut once, and most of their minutes were never used (16 Oct 2026: KT's planned episodes are 1,295 minutes, their plans touch 302). Plan them after any new episode and after second chances, the same way, with these differences:
+   - Write `factory/plans/ep_<id>_p2.json` (`_p3` if `_p2` exists), with the same `source` and a **new** brand (`KT_` + one word, unused by any plan).
+   - In `work/<id>_blocks.txt` every stretch a clip already uses is one line, `=== USED by <SLUG> (in-out s) ===`. Never cut inside it: `check_plan.py` refuses a clip that re-uses more than 10 seconds of another clip's minutes.
+   - New teachings only: read the USED slugs, and skip a moment that repeats the lesson of a clip already cut, even from different minutes.
+   - The same bar as a first pass: value first, the sharpest opening line, one arc = one clip. If the unused minutes hold only 2 clips worth posting, plan 2. Fewer good clips beat more weak ones.
 3. Read `factory/MASTERY.md` (what is proven to work, with its confidence) and `factory/HOOK_PATTERNS.md`, then read each episode's `work/<id>_blocks.txt` in full. Choose 6-9 clips per episode.
 4. Write `factory/plans/ep_<id>.json` (format below). Get exact start and end times from the cues in `work/<id>.srt`.
 5. `python factory/check_plan.py factory/plans/ep_<id>.json` for every plan. Fix everything it reports.
 6. Commit only the new plan files (plus `source_plan.json` if you extended it; only ever append to it) with the message `weekly plans: <episode titles>`, and push them to a new branch named `claude/plans-<YYYY-MM-DD>`. A GitHub job checks them again, merges only the plan files into main and starts the factory, which builds, checks and queues the clips. Never push to main, and never edit anything outside `factory/plans/` and `factory/source_plan.json`.
 7. End with a short report: the episodes planned, the clip titles, and anything you skipped and why. If something you saw contradicts `factory/MASTERY.md`, say so in the report - do not edit that file.
+
+## The offer line is the machine's, not yours (1 Nov 2026)
+If `my_brand/offers.json` exists, never write the offer or the comment line yourself. Captions end on the
+teaching or a question; the machine adds the one true offer line from that file. Never promise something the
+DM does not send ("the cheat sheet", "my list", "I'll tell you"): the machine deletes such a sentence. On the
+live account, captions had promised 9 different freebies while the comment only ever sent one link.
+
+## Trial hooks: 7 hooks, 1 clip, every day (1 Nov 2026)
+In the MORNING run (before 15:00 UTC) only, pick the ONE strongest clip you plan (the newest episode's best
+when there is one) and add `"trial_hooks"`: exactly 7 alternatives to its hook, each `["line one", "line two"]`,
+six words in all, each a DIFFERENT lever and all true to the clip: (1) the biggest number or sum, (2) a villain
+named, (3) a surprising true fact, (4) what the viewer is missing, (5) a named person + outcome, (6) Kevin
+Trudeau by name, (7) your wildest true one. The factory renders all 7 on their own servers (only the hook
+changes) and posts them as Instagram Trial Reels (shown to non-followers only) once the clip itself has posted;
+48 h later `state/variants.json` holds each one's views and the winner. Read the last winners there before you
+write any hook. `check_plan.py` lints every trial hook like a normal hook. Instagram only; skip it when
+Instagram is not connected.
 
 ## What makes a clip worth posting (Kamay's taste, learned from real numbers)
 - **Value is the foundation.** Every clip must teach, reveal or move. Controversy, intrigue and a sharp hook multiply value; they never replace it.
@@ -40,6 +77,7 @@ You work alone; nobody is watching. Be excellent, and never guess at facts.
 
 ## The edges (the #1 thing viewers notice)
 - **Start where the speaker is on camera.** The first second must show the speaker's face (Kamay's first-3-seconds rule, 2 Oct 2026). Episodes often cut to B-roll mid-story. If your opening sentence plays over a cutaway, start on the next sentence where Kevin is on screen. The build checks the first 1.0s with face detection: it moves the start to the nearest sentence on camera, or drops the clip with "opens on B-roll, no face".
+- **Never open on the wind-up.** "There's three reasons why...", "Well...", "Let me tell you...", "First..." are the run-up BEFORE the line. 11 Oct 2026: "THE BRAINWAVE ONLY THE RICH USE" opened on "Well, there's three reasons" over the back of Kevin's head, and the brainwave arrived two minutes later - Kamay: "completely bad taken". Open on the sentence the hook promises. `check_plan.py` refuses the common wind-ups.
 - **Start** on the first word of a sentence that stands alone. Never start on "And / But / So / Now / Because / That's why", or on a line that points back ("this", "that" referring to something earlier). Interviewer questions are fine openers if they set up the answer.
 - **End** on the payoff: the punchline, the lesson, the turn. The last line must not need the next one. Never end on a setup, mid-list, or running into a testimonial or advert (reader testimonials about "Your Wish Is Your Command" often follow a segment, so end before them).
 - Length: 45-180 seconds. Value wins over length, but cut the wind-up.
@@ -60,6 +98,12 @@ You work alone; nobody is watching. Be excellent, and never guess at facts.
   a newspaper ad` - "its BS, it dosnt tell anything". Only `A million dollars before he turned 18`
   survived. A mechanism tease ("one word", "this trick", "a stranger") is not a promise; it is a
   riddle wearing a promise's clothes. If the hook has no concrete thing in it, it is not finished.
+- **A number is not a promise on its own - the hook needs STAKES.** 5 Oct 2026: `Why it took her / 3 hours`
+  passed every rule (Why + a number + 6 words) and Kamay: "so stupid, so useless... it doesn't give me
+  anything." The 3 hours were a stranger's garden walk; the clip's real payoff was how to hold money
+  without fear of losing it. Every hook must hold at least one of: the viewer (you/your), money or
+  status, a loss or cost, a result, or a named person. Test: would a broke 30-year-old scrolling at
+  midnight feel it is about THEM? `check_plan.py` fails hooks with none of these.
 - **6 words total at most**, direct: start with Why / How / What. State the benefit or the claim plainly. No riddles, and never claim what Kevin doesn't say.
 - A hook promises; the clip must pay it. Carry the specific thing - the number, the name - into the hook when there is one.
 

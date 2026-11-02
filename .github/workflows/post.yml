@@ -40,6 +40,8 @@ permissions:
   contents: write               # to commit the state file back
   issues: write                 # queue_alarm.py emails Kamay via an issue
 
+env:
+  KT_LOCK_REPO: ${{ github.repository }}       # this copy's own posting record
 jobs:
   post:
     if: github.repository != 'kamaycampos/affiliate-factory'
@@ -98,10 +100,15 @@ jobs:
           DISCLOSURE: ${{ vars.DISCLOSURE || '#ad - I earn a commission if you buy through my link.' }}
           KIT_STUDIO: ${{ vars.AUTOPOST != 'on' && '1' || '0' }}
           KT_PLATFORMS: ${{ secrets.KT_PLATFORMS }}
+          UPLOADPOST_API_KEY: ${{ secrets.UPLOADPOST_API_KEY }}      # the Easy route (THE_AFFILIATE_FACTORY.md step 4)
+          UPLOADPOST_USER: ${{ secrets.UPLOADPOST_USER }}
+          UPLOADPOST_PLATFORMS: ${{ vars.UPLOADPOST_PLATFORMS }}
+          UPLOADPOST_FB_PAGE: ${{ vars.UPLOADPOST_FB_PAGE }}
           KT_CTA_KEYWORDS: ${{ secrets.KT_CTA_KEYWORDS }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          CADENCE_MIN: ${{ vars.CADENCE_MIN }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
@@ -124,6 +131,7 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          CADENCE_MIN: ${{ vars.CADENCE_MIN }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
           YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
           YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
@@ -141,6 +149,7 @@ jobs:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          CADENCE_MIN: ${{ vars.CADENCE_MIN }}
           FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
         run: python dm/dm_reply.py
 
@@ -163,7 +172,7 @@ jobs:
         run: |
           git config user.name  "kt-machine"
           git config user.email "noreply@github.com"
-          git add state/manifest.json state/metrics.json state/dms.json docs
+          git add state/manifest.json state/metrics.json state/dms.json docs; git add state/variants.json 2>/dev/null || true
           # Nothing due is the normal case; an empty commit would be noise.
           git diff --staged --quiet || git commit -m "state: $(date -u +%FT%TZ)"
           # 22 Sept 2026: a plain push lost a race and a clip was published

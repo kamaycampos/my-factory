@@ -32,7 +32,16 @@ import json, os, re, subprocess, sys
 
 FF = os.path.expanduser("~/Kamay/bin/ffmpeg")
 MIN_SECS, MAX_SECS = 8.0, 185.0
-CONNECTORS = {"and", "or", "to", "of", "after", "upon", "by", "over", "on", "the", "a"}
+CONNECTORS = {"and", "or", "to", "of", "after", "upon", "by", "over", "on", "the", "a",
+              "as"}   # "us as us", "as good as": 13 Oct 2026
+# words a sentence cannot end on: a capital He / His / Him right after one is reverent
+# ("will He care"), while "the market He" is still a missing full stop
+CANT_END = {"will", "would", "shall", "should", "can", "could", "may", "might", "must", "does",
+            "did", "do", "has", "have", "had", "is", "was", "are", "were", "be", "to", "for",
+            "of", "with", "from", "by", "in", "on", "that", "and", "but", "or", "if", "when",
+            "because", "as", "so", "how", "what", "why", "where", "than", "let", "make", "makes"}
+LIST_JOIN = {"or", "and", "nor", "than", "versus", "vs"}
+CLAUSE = {"that", "which", "who", "whom", "whose", "whether"}
 COPULA = {"is", "are", "was", "were", "be", "not", "isn't", "aren't", "wasn't", "no"}
 STARTERS = {"the", "this", "that", "these", "we", "you", "they", "he", "she", "it",
             "and", "but", "so", "guess", "now", "what", "if", "because", "there",
@@ -70,7 +79,9 @@ def text_faults(caps):
     actually shipped on 29 Sept, so none of them is hypothetical."""
     out = []
     words = [(w, i) for i, (_a, _b, t) in enumerate(caps) for w in t.split()]
-    flat = [w for w, _ in words]
+    # A closing quote hides the punctuation inside it: "'my father,' 'our father,'"
+    # read as a repeat with no comma (VSC OUR-FATHER-NOT-MY-FATHER, 13 Oct 2026).
+    flat = [w.rstrip("'\"\u2019\u201d") or w for w, _ in words]
     norm = [re.sub(r"[^a-z']", "", w.lower()) for w in flat]
 
     for i in range(len(norm) - 1):
@@ -113,6 +124,17 @@ def text_faults(caps):
                 # word or a copula/negation in between is grammar, not a scramble.
                 and norm[i] not in CONNECTORS
                 and not any(norm[i + k] in COPULA for k in (1, 2))
+                # 12 Oct 2026, three more that were RIGHT (VSC TWO-WRONG-BELIEFS, held
+                # back for days): "major problems or major failures" and "this disaster
+                # or this failure" are lists with the joining word BETWEEN the repeats,
+                # and "people that are not successful think that successful people" is
+                # a clause ("X think that X"). Damage never has a list word or a
+                # "that/which/who" there - "said He it said", "was It when was".
+                and not any(norm[i + k] in LIST_JOIN for k in (1, 2))
+                # "I need this to happen this month" (VSC NO-DEADLINES-FOR-GOD, 13 Oct):
+                # a joining word right after the first repeat is grammar too.
+                and norm[i + 1] not in CONNECTORS
+                and norm[i + 2] not in CLAUSE
                 # "every single one, every single one had more" - he repeats a whole
                 # phrase for emphasis, and emphasis is PUNCTUATED. Transcription damage
                 # never is: "said He it said", "was It when was", "do It things does"
@@ -141,9 +163,48 @@ def text_faults(caps):
         # bad ones, because either way nobody believes what it says.
         if (not flat[i].endswith((".", "!", "?", ",", ":", ";", "-", '"'))
                 and norm[i + 1] in STARTERS and flat[i + 1][:1].isupper()
+                # a reverent capital for God mid-sentence: "how much more will He care
+                # for you" (VSC WORRY-ABOUT-NOTHING, 15 Oct 2026)
+                and not (flat[i + 1].strip(",.?!") in ("He", "His", "Him") and norm[i] in CANT_END)
+                # a TITLE in title case, not a sentence: "a great book called The Power of
+                # Now" (VSC FOCUS-ONLY-ON-TODAY, 28 Oct 2026) - the next word is capitalised
+                # and starts no sentence ("The Power"), or this is a small word inside the
+                # title right after a capitalised one ("Power of Now")
+                and not (i + 2 < len(flat) and flat[i + 2][:1].isupper()
+                         and norm[i + 2] not in STARTERS)
+                and not (norm[i] in ("of", "the", "and", "in", "on", "for", "to", "a", "an")
+                         and i > 0 and flat[i - 1][:1].isupper() and norm[i - 1] not in STARTERS
+                         and not flat[i - 1].endswith((".", "!", "?")))
                 and not flat[i][:1].isupper()):
             out.append(f'sentence starts with no stop: "{flat[i]} {flat[i+1]}"')
     return sorted(set(out))
+
+
+def trim_tail(mp4, why):
+    """A clip whose ONLY fault is its last line ends at the last full stop instead.
+
+    20 Oct 2026, Kamay: WB posts once a day and the slot sat empty two nights running.
+    5 of the last 6 clips the last gate blocked were good teachings cut at a bad
+    edge; "Why your vegan food isn't healthy" ran 0.8s past "...chemicals in food
+    packaging." into "And it says,". Only the END is trimmed: the hook is drawn on
+    the first HOOK_SECS, so a bad start still fails. True when the file was cut
+    (the caller checks it again)."""
+    if not why or not all(w.startswith("ends mid-thought") for w in why):
+        return False
+    side = mp4[:-4] + "__caps.json"
+    caps = json.load(open(side))
+    ends = [i for i, c in enumerate(caps) if c[2].rstrip().endswith((".", "!", "?", '"'))]
+    if not ends or caps[ends[-1]][1] + 0.12 < MIN_SECS:
+        return False
+    t = caps[ends[-1]][1] + 0.12
+    tmp = mp4[:-4] + ".trim.mp4"
+    r = sh(FF, "-nostdin", "-y", "-i", mp4, "-t", f"{t:.2f}", "-c", "copy",
+           "-movflags", "+faststart", tmp)
+    if r.returncode or not os.path.exists(tmp):
+        return False
+    os.replace(tmp, mp4)
+    json.dump(caps[:ends[-1] + 1], open(side, "w"))
+    return True
 
 
 def check(mp4, samples=12):

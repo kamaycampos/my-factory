@@ -90,15 +90,20 @@ def _ts(t):
 
 def instagram_comments(ig, tok):
     """(comment_id, text, when, media_id, author) on the newest posts."""
-    media = _get(f"{G}/{ig}/media", {"fields": "id,timestamp", "limit": RECENT_POSTS,
+    media = _get(f"{G}/{ig}/media", {"fields": "id,timestamp,comments_count", "limit": RECENT_POSTS,
                                        "access_token": tok}).get("data", [])
+    diag = os.environ.get("DM_DIAG") == "1"
     out = []
     for m in media:
         if _ts(m["timestamp"]) < datetime.now(timezone.utc) - WINDOW - timedelta(days=30):
             continue
-        cs = _get(f"{G}/{m['id']}/comments", {"fields": "id,text,timestamp,username",
+        cs = _get(f"{G}/{m['id']}/comments", {"fields": "id,text,timestamp,username,replies{username}",
                                                "limit": 50, "access_token": tok}).get("data", [])
-        out += [(c["id"], c.get("text", ""), c["timestamp"], m["id"], c.get("username", ""))
+        if diag:
+            print(f"  post {m['timestamp'][:16]}: says {m.get('comments_count')} comments, API gave {len(cs)}"
+                  f" {[(c.get('text') or '')[:12] for c in cs]}")
+        out += [(c["id"], c.get("text", ""), c["timestamp"], m["id"], c.get("username", ""),
+                 {r.get("username", "") for r in (c.get("replies") or {}).get("data", [])})
                 for c in cs]
     return out
 
@@ -112,7 +117,7 @@ def facebook_comments(page, tok):
                                               "limit": 50, "filter": "stream",
                                               "access_token": tok}).get("data", [])
         out += [(c["id"], c.get("message", ""), c["created_time"], v["id"],
-                 (c.get("from") or {}).get("id", "")) for c in cs]
+                 (c.get("from") or {}).get("id", ""), set()) for c in cs]
     return out
 
 
@@ -152,13 +157,17 @@ def run(dry=False):
             pass
     sources = []
     if ig and itok and page:
-        sources.append(("instagram", lambda: instagram_comments(ig, itok), ftok or itok))
+        # Read with the Page token when there is one: it carries instagram_manage_comments.
+        # 14 Oct 2026: the Instagram token saw 5 comments in a week and missed a real
+        # "Money" - it was never granted comment access.
+        sources.append(("instagram", lambda: instagram_comments(ig, ftok or itok), ftok or itok))
     if page and ftok:
         sources.append(("facebook", lambda: facebook_comments(page, ftok), ftok))
     if not sources:
         print("comment -> DM needs Instagram/Facebook connected (type `post` in Claude)")
         return 0
     sent = 0
+    tally = {"keyword comments": 0, "already answered": 0, "outside 7 days": 0, "failed": 0}
     for platform, fetch, tok in sources:
         try:
             comments = fetch()
@@ -166,14 +175,24 @@ def run(dry=False):
             d["errors"].append({"at": now.isoformat(), "platform": platform, "error": str(e)})
             print(f"{platform}: could not read comments - {e}")
             continue
-        for cid, body, when, post, author in comments:
+        for cid, body, when, post, author, repliers in comments:
             if cid in d["sent"] or cid in d["seen"] or author in me:
+                continue
+            # ALREADY ANSWERED BY THE ACCOUNT ITSELF (14 Oct 2026). Meta's own comment
+            # rule replies in public ("Just sent it to you") as it sends its DM. If that
+            # rule is working, this comment is taken care of - two DMs to one person is
+            # the one mistake this must never make.
+            if repliers & me:
+                d["seen"][cid] = now.isoformat()
+                tally["already answered"] += matched(body, kws) is not None
                 continue
             d["seen"][cid] = now.isoformat()
             kw = matched(body, kws)
             if not kw:
                 continue
+            tally["keyword comments"] += 1
             if now - _ts(when) > WINDOW:
+                tally["outside 7 days"] += 1
                 continue
             if sent >= MAX_PER_RUN:
                 d["seen"].pop(cid, None)          # next run picks it up
@@ -187,12 +206,34 @@ def run(dry=False):
                 rec["message"] = private_reply(page, tok, cid, text)
                 d["sent"][cid] = rec
                 sent += 1
+                # THE PUBLIC REPLY, like Meta's own rule did (14 Oct 2026, Kamay: "before it
+                # replied to the comment"). It tells the viewer to check their messages -
+                # a DM from a page they don't follow lands in Requests - and other viewers
+                # see that commenting works. Never fatal: the DM is what matters.
+                if platform == "instagram" and os.environ.get("DM_PUBLIC_REPLY", "on") != "off":
+                    try:
+                        r = requests.post(f"{G}/{cid}/replies", timeout=T, params={
+                            "message": os.environ.get("DM_PUBLIC_TEXT") or "Just sent it to you - check your messages \U0001F4E9",
+                            "access_token": tok})
+                        rec["public_reply"] = "ok" if r.ok and "id" in (r.json() or {}) else (r.json() or {}).get("error", {}).get("message", "")[:120]
+                    except Exception as e:
+                        rec["public_reply"] = f"error: {type(e).__name__}"
             except Exception as e:
                 d["errors"].append({"at": now.isoformat(), "platform": platform,
                                     "comment": cid, "error": str(e)})
+                tally["failed"] += 1
+                # A FAILED SEND IS NOT A HANDLED COMMENT (14 Oct 2026). It stayed "seen",
+                # so when the missing permission was granted, the viewer who asked
+                # (a real "Money" comment) was never answered. Retry on later runs,
+                # at most 3 times, inside Meta's 7-day window.
+                tries = d.setdefault("tries", {})
+                tries[cid] = tries.get(cid, 0) + 1
+                if tries[cid] < 3:
+                    d["seen"].pop(cid, None)
     if not dry:
         save(d)
-    print(f"comment -> DM: {sent} sent this run, {len(d['sent'])} total")
+    print(f"comment -> DM: {sent} sent this run, {len(d['sent'])} total | "
+          + ", ".join(f"{k} {v}" for k, v in tally.items()))
     return 0
 
 

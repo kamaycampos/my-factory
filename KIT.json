@@ -1,10 +1,16 @@
 {
- "version": "1.1.0",
+ "version": "1.3.0",
  "upstream": "kamaycampos/affiliate-factory",
  "changes": [
-  "Your own control panel: clips, sources, style, voice, stats, updates",
-  "Full style control: colours, shadow, capitals, timing, your own font",
-  "Examples you love now teach your next plan",
-  "Default affiliate disclosure and the FDA line for health posts"
+  "Trial Reels: one clip a day gets 7 hooks, posted to Instagram as Trial Reels (non-followers only); the winner is measured after 48 h",
+  "The cinema look: film grade, a quiet serif label, calm captions - say 'cinema' when you set your style",
+  "Cadence: every 2 hours the machine checks today has enough posts and builds the waiting plans if not",
+  "Second pass: an episode already cut once is mined again for its unused minutes, never re-using a cut",
+  "Never two posts of the same video on one day; a day never holds more posts than its slots",
+  "Captions never promise what the DM does not send (my_brand/offers.json holds the one true offer)",
+  "Optional lane (my_brand/lane.json): off-topic hooks, harsh words and platform-risk words refused before building",
+  "Saves cannot be lost: a factory run that fails to push its clips now fails out loud instead of showing success",
+  "Faster, safer builds: trial hooks render on their own servers; the board's 'copied' ticks survive rebuilds",
+  "Newest caption engine and edge checks (shared with the live accounts, 2 Nov)"
  ]
 }

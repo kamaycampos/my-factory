@@ -309,6 +309,33 @@ def ar_ask(body_text, kw, url, platform, variant=None):
     return ""
 
 
+# WHICH KEYWORD FITS WHICH CLIP (14 Oct 2026). The comment word is the viewer's way of
+# saying "I want more of THIS" - so it should name what the clip was about. Words not
+# in the account's live list (KT_CTA_KEYWORDS, which Meta and dm_reply listen for) are
+# never chosen; the rotation is the fallback when nothing matches.
+KEYWORD_THEMES = {
+    "MONEY": r"money|income|rich|wealth|million|billion|\$|invest|broke|business|salary|debt|price|profit",
+    "WISH": r"wish|manifest|goal|universe|dream|desire|attract|write (it|them) down|70 ?x ?7|order",
+    "BRAIN": r"brain|mind|subconscious|frequency|wave|thought|belief|habit|program|imprint",
+}
+
+
+def keyword_for_clip(clip, allowed, previous=None):
+    """The allowed keyword whose theme the clip's hook and caption speak about most,
+    never the same as the previous post's when another fits."""
+    text = " ".join([str(clip.get("hook") or ""), str(clip.get("caption") or "")]).lower()
+    allowed = [k.upper() for k in allowed]
+    score = {k: len(re.findall(KEYWORD_THEMES[k], text)) for k in allowed if k in KEYWORD_THEMES}
+    ranked = sorted(allowed, key=lambda k: -score.get(k, 0))
+    for k in ranked:
+        if k != (previous or "").upper() and score.get(k, 0) > 0:
+            return k
+    for k in allowed:                       # nothing on theme: rotate, never repeat
+        if k != (previous or "").upper():
+            return k
+    return allowed[0]
+
+
 # Questions that end a post instead of selling it. Deliberately about THEM and
 # about the clip they just watched, never about us.
 ASK_LINES = [
@@ -326,6 +353,35 @@ ASK_LINES = [
 # this machine. 146 clips have gone out carrying no link at all; this is the first
 # one that earns.
 DEFAULT_OFFER = "https://your-affiliate-link"
+
+
+# THE ONLY TRUE OFFER (1 Nov 2026). Kamay: "you made up those offers, in every other clip you
+# are offering different stuff that we do not have." The planner wrote its own promise into
+# 9 posted WB captions ("the label cheat sheet", "our filter setup", "the oils we keep in our
+# kitchen") while commenting HEALTH only ever gets the World's Best Daily link. A brand with
+# my_brand/offers.json now never carries a planner-written ask: every sentence asking for a
+# comment or promising to send something is removed, wherever it sits, and one of the
+# brand's fixed, checked lines takes its place.
+_OFFERS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "my_brand", "offers.json")
+_PROMISE = re.compile(r"\bcomment\s+[\"'\u201c]?[A-Z]{2,}\b|\b(?:we|i)(?:'|\u2019)?ll\s+(?:send|dm|tell|show|give)\b"
+                      r"|\bsend you\b|\bdm you\b", re.I)
+
+
+def brand_offers(brand=""):
+    if cred_prefix(brand) == "AR" or not os.path.exists(_OFFERS_PATH):
+        return None
+    try:
+        return json.load(open(_OFFERS_PATH))
+    except (OSError, ValueError):
+        return None
+
+
+def strip_promises(line):
+    """The line without any sentence that asks for a comment or promises to send something."""
+    if not _PROMISE.search(line):
+        return line
+    parts = re.split(r"(?<=[.!?])\s+", line)
+    return " ".join(x for x in parts if not _PROMISE.search(x)).strip()
 
 
 def caption_for(platform, caption, brand="", keyword="", ask="", variant=None):
@@ -358,6 +414,10 @@ def caption_for(platform, caption, brand="", keyword="", ask="", variant=None):
             and not l.strip().lower().startswith("get access here:")]
     tags = [l for l in body if l.strip().startswith("#")]
     body = [l for l in body if not l.strip().startswith("#")]
+    offers = brand_offers(brand)
+    if offers:
+        body = [x for x in (strip_promises(l) if l.strip() else l for l in body) if x or not x.strip()]
+        body = [l for k, l in enumerate(body) if l.strip() or (k and body[k - 1].strip())]
     while body and not body[-1].strip():
         body.pop()
 
@@ -475,6 +535,29 @@ def caption_for(platform, caption, brand="", keyword="", ask="", variant=None):
     #
     # A question is NOT moved to the top. It is a closing line - asking "what
     # did you take from this one?" before they have seen anything is nonsense.
+    # ONE QUESTION, NOT TWO (14 Oct 2026). Every planner caption already ends on its own
+    # question ("Could you answer it right now, in one sentence?"), and the machine then
+    # added "What did you take from this one?" under it on every post - two questions
+    # back to back, the second one identical across the whole account. When the body
+    # already asks, the generic question goes and only the keyword line stays.
+    if offers and offers.get("keyword"):
+        kw = offers["keyword"]          # the brand's own word, whatever this job's env holds
+    if offers and kw and offers.get("cta_lines"):
+        v = variant if isinstance(variant, int) else 0
+        cta = offers["cta_lines"][v % len(offers["cta_lines"])].replace(offers.get("keyword", kw), kw)
+        if platform == "youtube" and url and offers.get("youtube_line"):
+            cta += "\n\n" + offers["youtube_line"].format(url=url)
+    last = next((l for l in reversed(body) if l.strip()), "")
+    mine_only = cred_prefix(brand) != "AR"          # Yaren's captions are hers to change
+    if mine_only and last.rstrip().endswith("?") and cta:
+        cta = "\n".join(l for l in cta.split("\n")
+                         if l.strip() and l.strip().lower() not in {a.lower() for a in ASK_LINES}).strip()
+    # YouTube descriptions take a working link and it costs nothing (RULES #24) - a
+    # question post used to leave it out there.
+    if platform == "youtube" and url and url not in (cta or "") and cred_prefix(brand) != "AR":
+        cta = ((cta or "") + f"\n\nGet access here: {url}").strip()
+    if mine_only:
+        body = [soften(l) for l in body]
     if not (cta or "").strip():
         out = list(body)
     elif (cred_prefix(brand) == "AR" and platform == "instagram"
@@ -489,6 +572,26 @@ def caption_for(platform, caption, brand="", keyword="", ask="", variant=None):
     if tags:
         out += [""] + tags
     return with_disclosure("\n".join(out).strip())
+
+
+# A LITTLE CAREFUL WITH WORDS THE PLATFORMS' FILTERS FLAG (Cali, 14 Oct 2026: "be a
+# little more careful... do not take it extreme"). Only phrases that read as an income
+# or health GUARANTEE, or as spam bait, are reworded at post time; Kevin's stories,
+# numbers and claims stay as he said them. check_plan.py warns the planner too.
+SOFTEN = [
+    (r"\bguaranteed\b", "proven"), (r"\bget rich quick\b", "get rich fast the wrong way"),
+    (r"\bfree money\b", "money people leave on the table"), (r"\brisk[- ]free\b", "low-risk"),
+    (r"\bmiracle\b", "breakthrough"), (r"\bcures?\b(?! they)", "helps with"),
+    (r"\b100% (guaranteed|sure|certain)\b", "very likely"), (r"\bclick (the|my) link\b", "see the link"),
+    (r"\bDM me\b", "comment below"), (r"\bmake \$[\d,]+ (fast|quick|overnight)\b", "build real income"),
+]
+
+
+def soften(line):
+    for rx, to in SOFTEN:
+        line = re.sub(rx, lambda m: to if m.group(0)[:1].islower() else to[:1].upper() + to[1:],
+                      line, flags=re.I)
+    return line
 
 
 def with_disclosure(cap):
@@ -630,6 +733,9 @@ def _ig_permalink(media_id, tok):
     return None
 
 
+LAST_MEDIA_ID = None
+
+
 def instagram(path, caption, public_url, clip=None, trial=False):
     """Publish a Reel. `trial=True` makes it a TRIAL REEL.
 
@@ -723,6 +829,8 @@ def instagram(path, caption, public_url, clip=None, trial=False):
     mid = d.get("id")
     if not mid:
         return f"publish failed {p.status_code}: {str(d)[:200]}"
+    global LAST_MEDIA_ID
+    LAST_MEDIA_ID = mid                    # trials.py scores each trial reel by its id
     link = _ig_permalink(mid, tok)
     if not link:
         # THE 24 AUG BUG, caught instead of reported as success.
@@ -1008,8 +1116,13 @@ def tiktok(path, caption, public_url, clip=None):
         return "uploaded, but TikTok returned no publish_id - cannot confirm"
     import time as _t
     last = {}
-    for attempt in range(6):
-        _t.sleep(2 + attempt * 2)
+    # 15 Oct 2026, WB's first clip: "still processing after ~40s" and it never
+    # reached the inbox - and with no publish_id kept, nobody could ask why. Wait
+    # up to ~3 minutes for TikTok's final word, and always keep the id.
+    deadline = _t.time() + 180
+    attempt = 0
+    while _t.time() < deadline:
+        _t.sleep(min(4 + attempt * 3, 20)); attempt += 1
         st = requests.post(
             "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
             headers={"Authorization": f"Bearer {tok}",
@@ -1022,9 +1135,9 @@ def tiktok(path, caption, public_url, clip=None):
             return "in your TikTok inbox - open TikTok and tap post"
         if status == "FAILED":
             reason = info.get("fail_reason") or str(last)[:160]
-            return f"TikTok REJECTED it: {reason}"
-    return ("uploaded but TikTok still processing after ~40s - "
-            f"last status {str((last.get('data') or {}).get('status'))[:60]}")
+            return f"TikTok REJECTED it: {reason} (publish_id {publish_id})"
+    return ("uploaded but TikTok still processing after ~3 min - "
+            f"last status {str((last.get('data') or {}).get('status'))[:60]} (publish_id {publish_id})")
 
 
 def already_on_instagram(caption, brand=""):
@@ -1156,6 +1269,83 @@ def audit_instagram(clips):
     return sorted(bad)
 
 
+# THE EASY ROUTE: UPLOAD-POST (14 Oct 2026). Connecting a member's own Meta app, Google
+# Cloud project and TikTok developer app is the wall a member hit ("complicated to set
+# up"), and TikTok refuses personal apps outright. Upload-Post is an approved publisher:
+# the member logs into each platform once in its dashboard, and one API key posts to all
+# four - TikTok included, public, no thumb. Dormant unless UPLOADPOST_API_KEY is set
+# (per brand, like every credential). The Idempotency-Key is the clip + platform, so a
+# retry or a lost state commit can never publish the same clip twice.
+UP = "https://api.upload-post.com/api"
+
+
+def uploadpost_platforms(brand):
+    (key,), missing = _cfg("UPLOADPOST_API_KEY", brand=brand)
+    if missing:
+        return set()
+    raw = os.environ.get(cred_prefix(brand) + "_UPLOADPOST_PLATFORMS") or os.environ.get(
+        "UPLOADPOST_PLATFORMS") or "tiktok,instagram,youtube,facebook"
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
+def via_uploadpost(name, path, caption, public_url, clip=None):
+    import hashlib
+    brand = brand_of(clip)
+    (key, user), missing = _cfg("UPLOADPOST_API_KEY", "UPLOADPOST_USER", brand=brand)
+    if missing:
+        return "not configured: " + ", ".join(missing)
+    if not str(public_url).startswith("https://"):
+        return "upload-post needs a public https link to the clip"
+    first = next((l for l in caption.splitlines() if l.strip()), "")[:95]
+    title = (clip or {}).get("hook") or first
+    if isinstance(title, list):
+        title = " ".join(title)
+    form = [("user", user), ("platform[]", name), ("video", public_url),
+            ("title", str(title)[:95]), ("async_upload", "true")]
+    if name == "youtube":
+        form += [("youtube_title", f"{str(title)[:90]} #shorts"), ("youtube_description", caption),
+                 ("privacyStatus", "public")]
+    elif name == "instagram":
+        form += [("instagram_title", caption), ("media_type", "REELS"), ("share_to_feed", "true")]
+    elif name == "facebook":
+        page = os.environ.get(cred_prefix(brand) + "_UPLOADPOST_FB_PAGE") or os.environ.get("UPLOADPOST_FB_PAGE", "")
+        form += [("facebook_title", first), ("facebook_description", caption),
+                 ("facebook_media_type", "REELS")] + ([("facebook_page_id", page)] if page else [])
+    elif name == "tiktok":
+        form += [("tiktok_title", caption[:2200]), ("post_mode", "DIRECT_POST")]
+    idem = hashlib.sha1(f"{(clip or {}).get('file', path)}|{name}".encode()).hexdigest()
+    h = {"Authorization": f"Apikey {key}", "Idempotency-Key": idem}
+    r = requests.post(f"{UP}/upload", headers=h, files=[(k, (None, str(v))) for k, v in form], timeout=120)
+    d = _j(r)
+    if r.status_code >= 400 or d.get("success") is False:
+        return f"upload-post refused ({r.status_code}): {str(d.get('message') or d.get('error') or d)[:160]}"
+
+    def result(d):
+        res = d.get("results") or {}
+        one = res.get(name) if isinstance(res, dict) else next(
+            (x for x in res if isinstance(x, dict) and x.get("platform") == name), None)
+        if isinstance(one, dict):
+            if one.get("skipped"):
+                return f"upload-post: {name} is not connected in the dashboard"
+            if one.get("success") and (one.get("url") or one.get("post_id")):
+                return "posted", one.get("url") or ""
+            if one.get("error"):
+                return f"upload-post error: {str(one['error'])[:160]}"
+        return None
+
+    got = result(d)
+    rid = d.get("request_id")
+    for _ in range(24):                      # up to ~6 minutes for TikTok/YouTube processing
+        if got or not rid:
+            break
+        time.sleep(15)
+        got = result(_j(requests.get(f"{UP}/uploadposts/status", headers=h,
+                                     params={"request_id": rid}, timeout=T)))
+    # Not confirmed is NOT "posted" (verify the artifact, not the call). The next run
+    # retries, and the Idempotency-Key hands back the same job instead of a second post.
+    return got or f"upload-post accepted, not yet confirmed (request {rid})"
+
+
 ADAPTERS = {"tiktok": tiktok, "instagram": instagram,
             "youtube": youtube, "facebook": facebook}
 ENABLED = [p.strip() for p in
@@ -1251,7 +1441,17 @@ def publish(clip, path, public_url, only=None):
     # Facebook says it already has this video, nothing else posts.
     order = ([p for p in ENABLED if p == "facebook"]
              + [p for p in ENABLED if p != "facebook"])
+    # ONE ACCOUNT'S PLATFORM CAN BE SWITCHED OFF WITHOUT TOUCHING THE OTHER (11 Oct 2026).
+    # KT_PLATFORMS is shared by Kamay and Yaren. Kamay's TikTok was flagged and his
+    # Facebook page restricted (code 368), and he posts the new ones by hand - so
+    # KT_PLATFORMS_OFF=tiktok,facebook stops his, while Yaren's keep posting.
+    _acct = cred_prefix(brand_of(clip))
+    _acct = "KT" if _acct in FALLBACK_BRANDS else _acct        # MINDSET_* posts as Kamay
+    off = {p.strip() for p in os.environ.get(_acct + "_PLATFORMS_OFF", "").split(",") if p.strip()}
     for name in order:
+        if name in off:
+            out[name] = clip.get("status", {}).get(name) or "off for this account"
+            continue
         if name != "facebook" and str(out.get("facebook", "")).startswith(
                 "DUPLICATE"):
             out[name] = "skipped - already published, see Facebook"
@@ -1261,6 +1461,8 @@ def publish(clip, path, public_url, only=None):
                 out[name] = clip["status"][name]
             continue
         fn = ADAPTERS.get(name)
+        if name in uploadpost_platforms(brand_of(clip)):
+            fn = (lambda n: lambda p, c, u, cl: via_uploadpost(n, p, c, u, cl))(name)
         if not fn:
             out[name] = "unknown platform"
             continue
@@ -1290,7 +1492,8 @@ def publish(clip, path, public_url, only=None):
             out[name] = res
         # A reel that posted also goes to stories. Bonus, never fatal - wrapped
         # so a story failure cannot turn a good reel into a bad status.
-        if name == "instagram" and out.get(name) == "posted" and STORIES_ON:
+        if (name == "instagram" and out.get(name) == "posted" and STORIES_ON
+                and "instagram" not in uploadpost_platforms(brand_of(clip))):
             try:
                 out["instagram_story"] = instagram_story(path, public_url, clip)
             except Exception as e:

@@ -8,14 +8,14 @@ behind Cloudflare, so this poses as Chrome (curl_cffi) and retries.
 
     python factory/rumble_catalog.py
 """
-import json, os, re, sys, time
+import html, json, os, re, sys, time
 
-# THE CHANNEL ADDRESS IS DEAD AS OF 30 SEPT 2026. rumble.com/c/TheKevinTrudeauOfficial
-# answers 404 (Rumble serves its generic page, which is why a crawl "succeeds"
-# and finds nothing). /c/KevinTrudeau answers 200 but lists no videos. So no new
-# episode has entered the system since the change, and the catalogue is frozen at
-# 632. FIND THE REAL ADDRESS FIRST - open the channel on his Mac and read the URL
-# from the address bar - then this file and factory/rumble_stock.py both work again.
+# THE ADDRESS IS rumble.com/c/TheKevinTrudeauOfficial (Kamay confirmed it again 5 Oct
+# 2026). On 30 Sept it briefly answered 404 and the catalogue froze at 632; it works.
+# Since 5 Oct this runs at the start of every factory run (factory.yml, stock job), so
+# a new upload enters the catalogue the day it appears - before, it ran only by hand,
+# and nothing Kevin posted after 30 Sept could be stocked. A refused crawl changes
+# nothing: the catalogue on disk is kept as it was.
 
 # OUR OWN queue.py WAS SHADOWING PYTHON'S. 30 Sept 2026: this crawler died with
 # "IndexError" inside factory/queue.py - because Python puts a script's own
@@ -26,27 +26,42 @@ sys.path[:] = [q for q in sys.path
                if os.path.abspath(q or ".") != os.path.dirname(os.path.abspath(__file__))]
 
 CHANNEL = "https://rumble.com/c/TheKevinTrudeauOfficial/videos?page={}"
+# --quick: the hourly watcher (kevin_watch.yml). One try at the page, then only the first
+# few related videos of the two newest episodes - Kevin's next upload led 7 Oct's list.
+QUICK = "--quick" in sys.argv
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rumble_catalog.json")
 
 
 def get(url):
+    """The channel page, or "" if every route is refused.
+
+    14 Oct 2026: from GitHub's servers the page came back with no videos on every
+    run since 7 Oct ("page 1: 0") while the same request from the Mac read all 639 -
+    Cloudflare treats datacenter addresses differently. Kevin's 14 Oct upload was
+    invisible for that reason alone. So: several browser fingerprints, and the log says which worked."""
     try:
         from curl_cffi import requests as cr
-        fetch = lambda: cr.get(url, impersonate="chrome", timeout=30)
+        fetchers = [(f"curl_cffi/{imp}", (lambda imp=imp: cr.get(url, impersonate=imp, timeout=30)))
+                    for imp in ("chrome", "safari", "edge", "chrome120", "firefox")]
     except ImportError:
         import urllib.request
         ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-        fetch = lambda: type("R", (), {"status_code": 200, "text": urllib.request.urlopen(
-            urllib.request.Request(url, headers={"User-Agent": ua}), timeout=30).read().decode("utf-8", "replace")})
-    for attempt in range(5):
-        try:
-            r = fetch()
-            if r.status_code == 200 and '"object_type":"video"' in r.text:
-                return r.text
-        except Exception:
-            pass
-        time.sleep(3 * (attempt + 1))
+        fetchers = [("urllib", lambda: type("R", (), {"status_code": 200, "text": urllib.request.urlopen(
+            urllib.request.Request(url, headers={"User-Agent": ua}), timeout=30).read().decode("utf-8", "replace")}))]
+    for attempt in range(1 if QUICK else 2):
+        for name, fetch in (fetchers[:1] if QUICK else fetchers):
+            try:
+                r = fetch()
+                if r.status_code == 200 and '"object_type":"video"' in r.text:
+                    if attempt or name != fetchers[0][0]:
+                        print(f"  (page read via {name})")
+                    return r.text
+                print(f"  {name}: HTTP {r.status_code}, {len(r.text)} bytes, no video data")
+            except Exception as e:
+                print(f"  {name}: {type(e).__name__}")
+            time.sleep(2)
+        time.sleep(10)
     return ""
 
 
@@ -68,6 +83,81 @@ def parse(html, page):
     return out
 
 
+EMBED = "https://rumble.com/embedJS/u3/?request={}&ver=2&v={}"
+CHANNEL_ID = "/c/TheKevinTrudeauOfficial"
+
+
+def _json(url):
+    # Plain and honest: these player endpoints answer GitHub's servers to a plain request,
+    # while the Chrome disguise gets the same 403 the channel page gives (probe, 16 Oct).
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "kt-factory/1.0"})
+    return json.loads(urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace"))
+
+
+def discover(cat, budget=120):
+    """The cloud route: Kevin's new uploads found through Rumble's embed player.
+
+    16 Oct 2026: the channel page and every video page answer GitHub's servers with
+    Cloudflare's 403, but the player's own endpoints (oEmbed, embedJS video + related,
+    the hls stream) answer them 200. The related list of an episode carries the
+    channel's NEXT upload: 7 Oct's list had 14 Oct's episode first. So walk forward
+    from the newest episodes we know, keep only Kevin's channel (author checked on
+    every video), and follow each new find in turn. Returns how many were added."""
+    from urllib.parse import quote
+    seeds = sorted((u for u, e in cat.items() if not e.get("short")),
+                   key=lambda u: cat[u].get("date", ""), reverse=True)[:2 if QUICK else 6]
+    frontier, seen, added, calls = [], set(), 0, 0
+    for u in seeds:
+        v = cat[u].get("embed")
+        if not v:
+            try:
+                calls += 1
+                v = re.search(r"/embed/(v[0-9a-z]+)/", _json(
+                    "https://rumble.com/api/Media/oembed.json?url=" + quote(u, safe=":/"))["html"])[1]
+                cat[u]["embed"] = v
+            except Exception as e:
+                print(f"  oembed {u[-40:]}: {type(e).__name__}")
+                continue
+        frontier.append(v)
+        seen.add(v)
+    while frontier and calls < budget:
+        v = frontier.pop(0)
+        try:
+            calls += 1
+            rel = (_json(EMBED.format("related", v)) or [])[:5 if QUICK else None]
+        except Exception as e:
+            print(f"  related {v}: {type(e).__name__}")
+            continue
+        for r in rel:
+            url = "https://rumble.com" + (r.get("l") or "").split("?")[0]
+            if r.get("v") in seen or calls >= budget or not re.match(r"https://rumble\.com/v[a-z0-9]+-", url):
+                continue
+            seen.add(r["v"])
+            if url in cat:
+                cat[url].setdefault("embed", r["v"])
+                continue
+            try:
+                calls += 1
+                d = _json(EMBED.format("video", r["v"]))
+            except Exception as e:
+                print(f"  video {r['v']}: {type(e).__name__}")
+                continue
+            if not (d.get("author") or {}).get("url", "").endswith(CHANNEL_ID):
+                continue
+            w, h = int(d.get("w") or 0), int(d.get("h") or 0)
+            cat[url] = {"title": html.unescape(d.get("title", "")), "dur": int(d.get("duration") or 0),
+                        "date": (d.get("pubDate") or "")[:10], "height": min(w, h) if w and h else h,
+                        "short": h > w, "page": 0, "embed": r["v"],
+                        "hls": ((d.get("u") or {}).get("hls") or {}).get("url")}
+            added += 1
+            frontier.append(r["v"])
+            print(f"  found via the player: {cat[url]['date']} {cat[url]['title'][:60]}")
+        time.sleep(0.5)
+    print(f"  player route: {added} new, {calls} requests")
+    return added
+
+
 def main():
     cat = json.load(open(OUT)) if os.path.exists(OUT) else {}
     for p in range(1, 60):
@@ -78,8 +168,20 @@ def main():
             break
         for u, e in got.items():
             cat.setdefault(u, {}).update(e)
+    if p == 1:
+        # Refused from this machine (GitHub's servers, since 7 Oct): the player route
+        # finds the new uploads instead. Say so loudly only if that fails too.
+        print("Rumble channel page refused from here - trying the player route")
+        try:
+            discover(cat)
+        except Exception as e:
+            print(f"::warning::player route failed too ({type(e).__name__}) - catalogue NOT refreshed")
     json.dump(cat, open(OUT, "w"), indent=1, ensure_ascii=False)
     full = [e for e in cat.values() if not e["short"] and e["dur"] >= 1200]
+    # Kevin uploads weekly. A newest episode older than 9 days means every route missed one.
+    newest = max((e.get("date", "") for e in cat.values() if not e["short"] and e["dur"] >= 600), default="")
+    if newest and (time.time() - time.mktime(time.strptime(newest, "%Y-%m-%d"))) > 9 * 86400:
+        print(f"::warning::newest Kevin episode in the catalogue is {newest} - a new upload may be missing")
     print(f"{len(cat)} videos, {len(full)} full episodes, {sum(1 for e in full if e['height'] >= 1080)} at 1080p+")
 
 

@@ -127,6 +127,117 @@ if STYLE:
 HOOK_START = float(STYLE.get("hook_size", 92))
 ACCENT_CAPTIONS = bool(STYLE.get("accent_captions", True))
 
+# --- THE CINEMA LOOK, 1 Nov 2026 ------------------------------------------------------
+# Kamay, comparing us with kevintrudeau_insights and kevins_apprentice (220K-401K views):
+# "they feel much more exclusive, professional... ours feels AI, superficial, no soul." He
+# picked look B of four rendered from the same 4K clip (work/style_preview): the picture
+# graded like film, the hook a quiet serif label with no box, captions small and calm in
+# sentence case low in the frame. KT_LOOK=cinema (repo variable) or "look": "cinema" in
+# style.json turns it on; anything else is the classic look, byte for byte.
+LOOK = (os.environ.get("KT_LOOK") or STYLE.get("look") or "classic").lower()
+CINEMA = LOOK == "cinema"
+_ASSETS = os.path.join(HOME, "bin")
+CINEMA_SERIF = os.path.join(_ASSETS, "cinema_serif_semibold.ttf")
+CINEMA_SANS = os.path.join(_ASSETS, "cinema_sans_medium.ttf")
+CINEMA_GRADE = ("eq=contrast=1.07:saturation=0.88:brightness=-0.015,"
+                "colorbalance=rs=0.03:gs=0.0:bs=-0.04,vignette=PI/5,noise=alls=3:allf=t")
+CINEMA_LABEL_Y = 250          # the label sits high, over the background, never on the mouth
+CINEMA_CAP_Y = 1500           # captions in the lower third, clear of the face
+CINEMA_CAP_SIZE = 50
+
+
+def cinema_label(lines, path):
+    """The hook as a quiet label: serif capitals, white, a soft shadow, no box. A
+    transparent PNG so it composites exactly where the old card did (and covers use it)."""
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+    text = [l.strip().upper() for l in lines if l.strip()][:3]
+    size = 66
+    fo = ImageFont.truetype(CINEMA_SERIF, size)
+    while size > 40 and max(fo.getlength(t) for t in text) > W - 160:
+        size -= 2
+        fo = ImageFont.truetype(CINEMA_SERIF, size)
+    step = int(size * 1.28)
+    hgt = step * len(text) + 40
+    img = Image.new("RGBA", (W, hgt), (0, 0, 0, 0))
+    sh = Image.new("RGBA", (W, hgt), (0, 0, 0, 0))
+    ds, d = ImageDraw.Draw(sh), ImageDraw.Draw(img)
+    for i, t in enumerate(text):
+        x = (W - fo.getlength(t)) / 2
+        ds.text((x, 20 + i * step + 3), t, font=fo, fill=(0, 0, 0, 170))
+        d.text((x, 20 + i * step), t, font=fo, fill=(255, 255, 255, 255))
+    sh = sh.filter(ImageFilter.GaussianBlur(6))
+    out = Image.alpha_composite(sh, img)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    out.save(path)
+    return path, W, hgt
+
+
+def cinema_label_y(src, t_in, label_h):
+    """Where the serif label sits so it never crosses his face (2 Nov 2026). The first real
+    cinema clip (AR 'Say cancel, cancel') was a tight close-up: his head filled the top of the
+    frame and the label at 250 ran across his forehead. High over the background when that is
+    clear of his face, else above his hair, else under his chin, else the spot covering the
+    least of eyes-to-mouth."""
+    band = face_band(src, t_in)
+    if not band:
+        return CINEMA_LABEL_Y
+    top, bot = band
+    core_t, core_b = top + (bot - top) * 0.22, top + (bot - top) * 0.78
+    brow = top + (bot - top) * 0.32          # face_band pads hair at 0.55 of 1.73 face heights
+    lo, hi = 90, CINEMA_CAP_Y - 40 - label_h
+    # over his hair is fine (WB, 2 Nov: reads well); over forehead skin or eyes is not
+    if CINEMA_LABEL_Y + label_h - 20 <= brow or CINEMA_LABEL_Y >= bot:
+        return CINEMA_LABEL_Y
+    if top - label_h - 10 >= lo:
+        return int(top - label_h - 10)
+    if bot + 20 <= hi:
+        return int(bot + 20)
+    best, worst = CINEMA_LABEL_Y, None
+    for y in range(lo, max(lo + 1, hi), 10):
+        y2 = y + label_h
+        core = max(0, min(y2, core_b) - max(y, core_t))
+        cost = core * 3 + max(0, min(y2, bot) - max(y, top)) - core
+        if worst is None or cost < worst:
+            best, worst = y, cost
+    return best
+
+
+def cinema_caption_chain(ps, y=CINEMA_CAP_Y):
+    """Spoken bursts, same timing as ever, set small and calm: sentence case, one colour."""
+    f = font_arg(CINEMA_SANS)
+    out = []
+    for a, b, text in ps:
+        out.append(
+            f"drawtext=fontfile={f}:text='{esc(text)}':fontsize={CINEMA_CAP_SIZE}"
+            f":fontcolor=white:shadowx=0:shadowy=3:shadowcolor=black@0.65:borderw=0"
+            f":x=(w-tw)/2:y={y}:enable='gte(t,{a:.2f})*lt(t,{b:.2f})'")
+    return out
+
+
+def cinema_label_draw(hook, y=CINEMA_LABEL_Y):
+    """The YouTube cut keeps its label for the whole video (a cover from any frame)."""
+    f = font_arg(CINEMA_SERIF)
+    lines = [l.strip().upper() for l in hook if l.strip()][:3]
+    return [f"drawtext=fontfile={f}:text='{esc(l)}':fontsize=60:fontcolor=white"
+            f":shadowx=0:shadowy=3:shadowcolor=black@0.6:x=(w-tw)/2:y={y + i * 78}"
+            for i, l in enumerate(lines)]
+
+
+def _rgb(key, default):
+    """A hex colour from style.json ("#0F3D2E"), else the house colour. 14 Oct 2026:
+    WB Organics wanted a jungle-green hook card with a gold bar; the card colours were
+    hard-coded. No key - KT, Awakened Rise, VSC - means the old colours, byte for byte."""
+    h = str(STYLE.get(key) or "").lstrip("#")
+    try:
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) if len(h) == 6 else default
+    except ValueError:
+        return default
+
+
+CARD_RGB = _rgb("hook_card_color", (10, 11, 14))
+CARD_BAR = _rgb("hook_bar_color", (245, 197, 66))
+CARD_TEXT = _rgb("hook_text_color", (255, 255, 255))
+
 
 def up(t):
     return t.upper() if UPPER else t
@@ -369,12 +480,12 @@ def hook_card(lines, path, width=None, soft=False, max_h=None):
     # card_y. Less opaque so his features read through it instead of a slab
     # being dropped on him.
     d.rounded_rectangle([0, 0, cw - 1, ch - 1], 24,
-                        fill=(10, 11, 14, 186 if soft else 225))
-    d.rounded_rectangle([34, ch - 16, 150, ch - 10], 3, fill=(245, 197, 66))
+                        fill=CARD_RGB + (186 if soft else 225,))
+    d.rounded_rectangle([34, ch - 16, 150, ch - 10], 3, fill=CARD_BAR)
     y = 28
     for l in lines:
         d.text(((cw - probe.textlength(l, font=fo)) / 2, y), l, font=fo,
-               fill=(255, 255, 255))
+               fill=CARD_TEXT)
         y += step
     img.save(path)
     return path, cw, ch
@@ -452,7 +563,7 @@ def card_y(src, t_in, card_h):
     top, bot = band
     TOP_LIMIT, BOT_LIMIT = 210, CAP_Y - 70
     if bot <= mid or top >= mid + card_h:
-        return mid, False
+        return mid, False, None
     below = int(bot) + 20
     if below + card_h <= BOT_LIMIT:
         return below, False, None
@@ -653,7 +764,23 @@ def yt_window(sil, t_in, t_out):
     return best
 
 
-def thumb(video):
+def main_person(shots):
+    """When a clip frames more than one person, the clip-time windows of the one
+    framed longest. None when there is only one."""
+    groups = []                                      # [[cx, seconds, [(a, b)]]]
+    for sh in shots or []:
+        g = next((g for g in groups if abs(g[0] - sh["cx"]) <= 0.08), None)
+        if g is None:
+            g = [sh["cx"], 0.0, []]
+            groups.append(g)
+        g[1] += sh["end"] - sh["start"]
+        g[2].append((sh["start"], sh["end"]))
+    if len(groups) < 2:
+        return None
+    return max(groups, key=lambda g: g[1])[2]
+
+
+def thumb(video, prefer=None, card=None):
     """A cover for YouTube, grabbed while the hook is on screen.
 
     30 Aug: I told Kamay custom thumbnails probably do not work on Shorts and
@@ -785,6 +912,17 @@ def thumb(video):
     # so a clip whose face is there early keeps exactly the cover it had.
     if det is not None and not any(x["face"] >= 0.12 for x in scored):
         _probe(LATE)
+    # 3 Oct 2026: THE COVER SHOWS WHO THE CLIP IS ABOUT. Member clip 1 opens on
+    # the interviewer asking the question, so every probe above found HIS face
+    # and he became the cover of a Kevin clip. `prefer` is when the person
+    # framed longest is on screen (main_person). If he is not on screen during
+    # the hook, look at his first seconds instead, and put the hook card on
+    # that frame so the cover still carries the promise.
+    def mine(t):
+        return not prefer or any(a <= t < b for a, b in prefer)
+    if prefer and det is not None and not any(mine(x["t"]) and x["face"] >= 0.12 for x in scored):
+        a, b = prefer[0]
+        _probe([a + 0.6 + 0.2 * i for i in range(10) if a + 0.6 + 0.2 * i < b - 0.2])
 
     best_t = None
     if scored:
@@ -796,7 +934,8 @@ def thumb(video):
             x["score"] = (0.65 * (1.0 - x["motion"] / mm)
                           + 0.35 * (x["sharp"] / ms)
                           - (0.5 if x["lit"] < 35 else 0.0)
-                          + (1.5 if x["face"] >= 0.12 else 0.0))   # a face wins
+                          + (1.5 if x["face"] >= 0.12 else 0.0)    # a face wins
+                          + (1.0 if prefer and mine(x["t"]) and x["face"] >= 0.12 else 0.0))
         best_t = max(scored, key=lambda x: x["score"])["t"]
         if det is not None and not any(x["face"] >= 0.12 for x in scored):
             print(f"  NOTE {os.path.basename(video)}: no face in the first "
@@ -804,9 +943,16 @@ def thumb(video):
 
     if best_t is None:
         best_t = 1.5
-    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-ss", f"{best_t:.2f}",
-                    "-i", video, "-frames:v", "1", "-filter_complex", vf,
-                    "-q:v", "3", dest], capture_output=True)
+    if card and card[0] and os.path.exists(card[0]) and best_t >= HOOK_SECS - 0.4:
+        # a frame from after the hook: draw the hook card on it, where the clip has it
+        subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-ss", f"{best_t:.2f}",
+                        "-i", video, "-i", card[0], "-frames:v", "1", "-filter_complex",
+                        f"[0:v][1:v]overlay=x=(W-w)/2:y={card[1]}[p];[p]" + vf,
+                        "-q:v", "3", dest], capture_output=True)
+    else:
+        subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-ss", f"{best_t:.2f}",
+                        "-i", video, "-frames:v", "1", "-filter_complex", vf,
+                        "-q:v", "3", dest], capture_output=True)
 
     # WHAT INSTAGRAM NEEDS. It picks its own cover unless the container is given
     # thumb_offset in milliseconds - which is why her grid was showing frame
@@ -1015,6 +1161,34 @@ DANGLING = {
 }
 
 
+TAG_CLOSE = {"(": ")", "[": "]", "*": "*"}
+
+
+def drop_sound_tags(ws):
+    """Whisper's sound markup is never something anyone said.
+
+    6 Oct 2026: "(laughing) Because" and "[BLANK_AUDIO]" were burned into
+    captions, and the queue gate (kt_qc) rightly refused both clips - two good
+    teachings lost to markup. One word per cue splits a tag across cues
+    ("(audience", "laughing)"), so a tag runs from the token that opens it to
+    the token that closes it, at most 4 tokens. A bracket that never closes in
+    that span was not a tag: only that one token goes, the words stay.
+    """
+    out, k = [], 0
+    while k < len(ws):
+        w = ws[k][2]
+        close = TAG_CLOSE.get(w[:1])
+        if close is None:
+            out.append(ws[k])
+            k += 1
+            continue
+        end = next((j for j in range(k, min(k + 4, len(ws)))
+                    if ws[j][2].rstrip(".,!?;:").endswith(close)
+                    and (j > k or len(ws[j][2].rstrip(".,!?;:")) > 1)), None)
+        k = (end if end is not None else k) + 1
+    return out
+
+
 def phrases_from_words(words):
     """Caption bursts timed to when each word is actually SPOKEN.
 
@@ -1039,6 +1213,7 @@ def phrases_from_words(words):
     ws = [(a, b, w.strip().lstrip("-\u2013\u2014").strip())
           for a, b, w in words if w and w.strip()]
     ws = [x for x in ws if x[2]]
+    ws = drop_sound_tags(ws)
     ws = numbers_to_digits(ws)
     n = len(ws)
     if not n:
@@ -1240,9 +1415,84 @@ MAGNITUDE_WORDS = {"billion", "million", "thousand", "hundred", "percent",
                    "dollar", "year", "grand", "k"}
 
 
+EDGE_TAIL = 0.30    # a word starting this close to the cut is not in the clip
+
+
+def warp_words(words, path):
+    """Move each caption to its own word, by what the sync check MEASURED (29 Oct 2026).
+
+    RETIME fixes captions that are all late by the same amount. Most timing refusals are
+    not that: the median is near zero and a few captions sit 0.8-3 s off, because the
+    word timings drift in one stretch of the clip. kt_sync_check (SYNC_ANCHORS) writes,
+    for every caption it could grade against the waveform, its start and its error. Each
+    word here is moved by minus the error at its time, interpolated between the graded
+    captions (held flat before the first and after the last). Order is kept. Nothing is
+    guessed: no file, or fewer than 5 points, and the words come back unchanged - and the
+    re-rendered clip is judged by the same check as any other, on points it never saw."""
+    if not words or not path:
+        return words
+    try:
+        pts = sorted((float(a), float(e)) for a, e in json.load(open(path)))
+    except (OSError, ValueError, TypeError):
+        return words
+    if len(pts) < 5:
+        return words
+    # LEARN FROM HALF, BE JUDGED ON THE OTHER HALF. Fitting every graded point would put
+    # each one exactly on its pause and the re-check would grade its own answers. Only
+    # every other point moves the words; the points left out are the honest test.
+    pts = pts[::2]
+    def corr(t):
+        if t <= pts[0][0]:
+            return -pts[0][1]
+        for (a0, e0), (a1, e1) in zip(pts, pts[1:]):
+            if t <= a1:
+                f = (t - a0) / (a1 - a0) if a1 > a0 else 0.0
+                return -(e0 + f * (e1 - e0))
+        return -pts[-1][1]
+    out, last = [], 0.0
+    for a, b, w in words:
+        d = corr(a)
+        na = max(last, a + d, 0.0)
+        out.append((na, max(na + 0.05, b + d), w))
+        last = na
+    print(f"      captions re-timed word by word from {len(pts)} measured points")
+    return out
+
+
+def edge_words(words, cues, t_in, t_out):
+    """The two whisper slips at a clip's edges, undone from the source transcript.
+
+    18 Oct 2026, WB "What's leaching into your food": the last gate blocked a clip
+    that opens and ends clean, because the caption record said it "opens mid-sentence
+    on 'black colored plastic'" and "ends mid-thought on 'It says--'". The source
+    reads "Kevin was right file. Black colored plastic..." and "...gets in your body.
+    It says tiny shards...". whisper, reading the window alone, wrote the first word
+    in lowercase, and heard the first breath of the NEXT sentence at the very cut and
+    gave it a caption that sat on screen for the last 0.17s.
+      TAIL  words AFTER the last full stop that start within EDGE_TAIL of the end are
+            the next sentence leaking in: drop them (nobody can read 9 frames anyway).
+            Only after a full stop: on the same clip "body." itself started 0.16s
+            before "It", and a plain time rule cut the clip's real last word.
+      HEAD  a lowercase first word that the source transcript writes capitalised
+            right after a full stop is a sentence start: take the source's casing.
+            A first word the source does NOT start a sentence with stays lowercase,
+            so kt_qc still fails a real mid-sentence open."""
+    span = t_out - t_in
+    stops = [i for i, x in enumerate(words) if x[2].rstrip("\"'”)").endswith((".", "!", "?"))]
+    if stops and stops[-1] < len(words) - 1 and words[stops[-1] + 1][0] >= span - EDGE_TAIL:
+        words = words[:stops[-1] + 1]
+    a, b, w = words[0]
+    bare = re.sub(r"[^A-Za-z']", "", w)
+    if bare[:1].islower() and cues:
+        near = " ".join(t for s, e, t in cues if e >= t_in - 20 and s <= t_in + 5)
+        if re.search(r"[.!?][\"'”)]*\s+" + re.escape(bare[:1].upper() + bare[1:]) + r"\b", near):
+            words = [(a, b, w.replace(bare, bare[:1].upper() + bare[1:], 1))] + list(words[1:])
+    return words
+
+
 def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
            hook_y=None, yt_win=None, slug=None, fix=None, shots=None,
-           track=None):
+           track=None, cuts=None, opener=None, geo=None):
     burn.MAX_CHARS = CAP_MAX          # short bursts, not subtitle lines
     # Real word timings when we have them; the old estimate only as a fallback.
     import kt_words
@@ -1268,6 +1518,31 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
             words = vsc_v2_time.anchor_words(src, t_in, t_out, words)
         except Exception as e:                       # never let timing polish lose a clip
             sys.stderr.write(f"      caption anchoring skipped: {type(e).__name__}: {e}\n")
+    # A MEASURED CORRECTION, NEVER A GUESS. 6 Oct 2026: clips failed the sync check
+    # with every caption late by the SAME amount (median +0.64s, worst +0.69s) - a
+    # constant offset, not drift. kt_batch_build re-renders such a clip once with
+    # CAPTION_SHIFT = minus the measured median, and the same check judges it again.
+    shift = float(os.environ.get("CAPTION_SHIFT") or 0)
+    if words and shift:
+        words = [(max(0.0, a + shift), max(0.0, b + shift), w) for a, b, w in words]
+        print(f"      captions moved {shift:+.2f}s (measured offset)")
+    words = warp_words(words, os.environ.get("CAPTION_WARP"))
+    if words:
+        words = edge_words(words, cues, t_in, t_out)
+    # TWO PEOPLE IN ONE SHOT: FRAME WHOEVER IS TALKING. See vsc_frame.speaker_turns.
+    # It needs the final word times, because a switch may only land on the first
+    # word of a sentence.
+    if shots and words and cuts is not None:
+        try:
+            import vsc_frame as VF
+            turned = VF.speaker_turns(src, t_in, t_out, shots, cuts,
+                                      VF.sentence_starts(words))
+            if turned != shots:
+                print("      speaker turns: " + ", ".join(
+                    f"{s['start']:.1f}s {s['cx']:.2f}" for s in turned))
+                shots = turned
+        except Exception as e:                       # never let framing polish lose a clip
+            sys.stderr.write(f"      speaker turns skipped: {type(e).__name__}: {e}\n")
     ps = phrases_from_words(words) if words else burn.phrases(cues, t_in, t_out)
     # KEEP A RECORD OF WHAT WAS BURNED. 16 Sept 2026: captions drifted up to
     # 9.5s ahead of the speech on seven clips, and nothing could see it - the
@@ -1280,8 +1555,10 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
                       open(os.path.splitext(dest)[0] + "__caps.json", "w"))
         except OSError:
             pass
-    geo = fill_crop(src, cx, zoom, shots)
-    caps = caption_chain(ps)
+    # geo: an explicit crop for a layout the face tracker cannot read (a podcast
+    # screen with the speaker in a side panel). None = the usual tracked crop.
+    geo = geo or fill_crop(src, cx, zoom, shots)
+    caps = cinema_caption_chain(ps) if CINEMA else caption_chain(ps)
     # THE HOOK IS A CARD, COMPOSITED - see hook_card(). persist=True (the
     # YouTube cut) still uses drawtext, because a card that never leaves would
     # cover a third of the frame for the whole video.
@@ -1294,7 +1571,10 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
     # cant see it." The transparency was there to spare his face, and the
     # placement above already does that job. A hook that cannot be read at
     # thumbnail size is not a hook.
-    if fit:                        # shrink it into the gap under his chin
+    if CINEMA:                     # the quiet serif label, high, no box (1 Nov 2026)
+        card, _cw, _ch = cinema_label(hlines, cpath)
+        cy_px = cinema_label_y(src, t_in, _ch)
+    elif fit:                      # shrink it into the gap under his chin
         card, _cw, _ch = hook_card(hlines, cpath, max_h=fit)
     else:
         card = cpath
@@ -1308,8 +1588,21 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
     # between an edit and an accident.
     dur = t_out - t_in
     fs = min(FADE_OUT, max(0.35, dur * 0.12))
-    pre = ",".join([geo] + caps)
-    fc = (f"[0:v]{pre}[bg];"
+    pre = ",".join([geo] + ([CINEMA_GRADE] if CINEMA else []) + caps)
+    # THE CINEMATIC OPENER (kt_opener.py, 17 Oct 2026): a 4K shot of the hook's
+    # subject for the first seconds, Kevin's voice under it, a low hit, then a
+    # crossfade into Kevin. Captions and the hook card ride on top. Off unless the
+    # clip carries an opener; without one this graph is byte-for-byte the old one.
+    if opener:
+        import kt_opener as OP
+        vin = (OP.video_graph(geo, 2, opener.get("secs", OP.OPEN_SECS)) + ";"
+               + "[kv0]" + (",".join(caps) or "null") + "[bg];")
+        ain, asrc = OP.audio_graph(3) + ";", "[a0]"
+        extra = ["-ss", f"{float(opener.get('start', 0)):.2f}", "-i", opener["path"],
+                 "-i", OP.sting()]
+    else:
+        vin, ain, asrc, extra = f"[0:v]{pre}[bg];", "", "[0:a]", []
+    fc = (vin +
           # NO FADE IN. 13 Sept 2026, Kamay: "THE HOOK HAS TO START NOT SLOWLY
           # BUT AT ONCE FROM THE VERY BEGINNING SO IF THE THUMBNAIL CHOOSES THE
           # VERY FIRST PART OF THE CLIP IT CATCHES THE HOOK." TikTok and
@@ -1320,12 +1613,12 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
           f"[bg][hk]overlay=x=(W-w)/2:y={cy_px}:"
           f"enable='lt(t,{HOOK_SECS})'[vv];"
           f"[vv]fade=t=out:st={dur - fs:.2f}:d={fs:.2f}[v];"
-          f"[0:a]afade=t=out:st={dur - fs:.2f}:d={fs:.2f}[a]")
+          f"{ain}{asrc}afade=t=out:st={dur - fs:.2f}:d={fs:.2f}[a]")
     vf = ["-filter_complex", fc, "-map", "[v]", "-map", "[a]"]
     cmd = [FFMPEG, "-y", "-loglevel", "error", "-ss", f"{t_in:.2f}",
            "-t", f"{t_out - t_in:.2f}", "-i", src,
            "-loop", "1", "-framerate", "30", "-t", f"{HOOK_SECS:.2f}",
-           "-i", card,
+           "-i", card, *extra,
            *vf, "-c:v", "libx264", "-preset", "medium", "-crf", "19",
            "-maxrate", "9000k", "-bufsize", "18000k",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
@@ -1342,11 +1635,20 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
             sys.stderr.write(r.stderr[-1500:] + "\n")
             raise SystemExit(f"render failed: {dest}")
 
+    if opener:
+        # Every shot used is on record beside the clip: source, id, licence.
+        try:
+            meta = json.load(open(opener["path"][:-4] + ".json"))
+            meta.update({"query": opener.get("query"), "start": opener.get("start", 0)})
+            json.dump(meta, open(os.path.splitext(dest)[0] + "__opener.json", "w"), indent=1)
+        except Exception:
+            pass
+
     # EVERY clip gets a cover. Originally thumb() only ran inside the 59s branch,
     # so any clip already under 60 seconds got no cover at all and YouTube picked
     # its own frame - which is the exact problem covers exist to solve. Yaren's
     # 50-second clip was the one that exposed it.
-    thumb(dest)
+    thumb(dest, prefer=main_person(shots), card=(card, cy_px))
 
     # The YouTube cut, only when the full clip would break the 60s rule.
     if t_out - t_in > YT_MAX:
@@ -1358,7 +1660,7 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
         # it is the only way to see that; the numbers look identical either way.
         # So there is now a manual escape hatch for the cases a human has read
         # and disagrees with, rather than retuning detection for one clip.
-        win = yt_win or yt_window(kt_snap.silences(src), t_in, t_out)
+        win = None if os.environ.get("NO_SIDE_CUTS") else (yt_win or yt_window(kt_snap.silences(src), t_in, t_out))
         if win:
             ys, ye = win
             # RE-TIME, do not just re-seek. drawtext timings are relative to the
@@ -1369,7 +1671,7 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
                       and b <= ye - t_in] if words else []
             ywords = [(a - (ys - t_in), b - (ys - t_in), w) for a, b, w in ywords]
             yps = phrases_from_words(ywords) if ywords else burn.phrases(cues, ys, ye)
-            ygeo = fill_crop(src, cx, zoom)
+            ygeo = geo or fill_crop(src, cx, zoom)
             # The window is often a DIFFERENT teaching from the full clip, so
             # the full clip's hook can promise something this cut never
             # delivers. hook_yt in kt_series.json overrides it where they differ.
@@ -1382,7 +1684,10 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
             # our burned captions, three layers of text at once, and said it
             # "looks like we didnt care". He is right. It clears at 3s like the
             # rest.
-            ydraws = hook_chain(hook_y or hook) + caption_chain(yps)
+            _yl = [l for l in (hook_y or hook) if l.strip()][:3]
+            ydraws = (([CINEMA_GRADE] + cinema_label_draw(hook_y or hook, cinema_label_y(src, ys, 78 * len(_yl) + 10))
+                       + cinema_caption_chain(yps)) if CINEMA
+                      else (hook_chain(hook_y or hook) + caption_chain(yps)))
             yvf = (["-vf", ",".join([ygeo] + ydraws)] if zoom >= 0.999
                    else ["-filter_complex", ygeo + "," + ",".join(ydraws)])
             yfs = min(FADE_OUT, max(0.35, (ye - ys) * 0.12))
@@ -1395,6 +1700,23 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
            "-maxrate", "9000k", "-bufsize", "18000k",
                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                     "-movflags", "+faststart", yt_path(dest)]
+            if opener:
+                # THE YOUTUBE CUT OPENS THE SAME WAY (17 Oct 2026, Kamay: "YouTube and
+                # story cuts get it too"). The story is cut from the finished clip, so
+                # it inherits the opener; this window is rendered from the source.
+                import kt_opener as OP
+                yd = ye - ys
+                yfc = (OP.video_graph(ygeo, 1, opener.get("secs", OP.OPEN_SECS)) + ";[kv0]"
+                       + ",".join(ydraws) + f",fade=t=out:st={yd - yfs:.2f}:d={yfs:.2f}[v];"
+                       + OP.audio_graph(2) + f";[a0]afade=t=out:st={yd - yfs:.2f}:d={yfs:.2f}[a]")
+                ycmd = [FFMPEG, "-y", "-loglevel", "error", "-ss", f"{ys:.2f}",
+                        "-t", f"{yd:.2f}", "-i", src,
+                        "-ss", f"{float(opener.get('start', 0)):.2f}", "-i", opener["path"],
+                        "-i", OP.sting(), "-filter_complex", yfc, "-map", "[v]", "-map", "[a]",
+                        "-c:v", "libx264", "-preset", "medium", "-crf", "19",
+                        "-maxrate", "9000k", "-bufsize", "18000k",
+                        "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
+                        "-movflags", "+faststart", yt_path(dest)]
             ry = subprocess.run(ycmd, capture_output=True, text=True)
             if ry.returncode:
                 sys.stderr.write(ry.stderr[-800:] + "\n")
@@ -1404,7 +1726,8 @@ def render(src, dest, t_in, t_out, hook, cues, cx, apply, zoom=1.0,
 
     # AND A STORY FOR EVERY CLIP, not only the ones a YouTube window fitted.
     try:
-        make_story(dest)
+        if not os.environ.get("NO_SIDE_CUTS"):      # a trial variant needs no story or YouTube cut
+            make_story(dest)
     except SystemExit:
         raise
     except Exception as e:
@@ -1435,7 +1758,9 @@ def shots_for(src, t_in, t_out, slug):
     if os.path.exists(cache):
         try:
             j = json.load(open(cache))
-            return {"segments": j["segments"], "track": j.get("track") or []}
+            if "cuts" in j:           # older caches lack the cuts speaker turns need
+                return {"segments": j["segments"], "track": j.get("track") or [],
+                        "cuts": j["cuts"]}
         except (ValueError, OSError, KeyError):
             pass
     try:
@@ -1453,16 +1778,17 @@ def shots_for(src, t_in, t_out, slug):
     try:
         dur = VF.duration(win)
         track = VF.face_track(win, dur)
-        segs = VF.segments(VF.shot_cuts(win), dur, track)
+        cuts = VF.shot_cuts(win)
+        segs = VF.segments(cuts, dur, track)
         # The per-second track is kept as well as the shots. The hook lives for
         # three seconds and a shot can run thirty, so a shot's AVERAGE face
         # position is the wrong number to place the card against - measured on
         # KT_POS/02 the shot average put his face at 29% of frame height while
         # in the first three seconds it was at 13%.
-        json.dump({"segments": segs,
+        json.dump({"segments": segs, "cuts": cuts,
                    "track": [list(t) if t else None for t in track]},
                   open(cache, "w"), indent=1)
-        return {"segments": segs, "track": track}
+        return {"segments": segs, "track": track, "cuts": cuts}
     except (Exception, SystemExit) as e:
         # SystemExit DELIBERATELY, and this cost a batch. 15 Sept 2026: the
         # fourth of four clips died on "cannot read duration" and everything
@@ -1524,8 +1850,12 @@ def run_series(key, spec, apply, only):
             for f in os.listdir(bdir):
                 # NEVER match a YouTube cut here. It also contains the slug, so
                 # reusing its name produced "..._yt59__yt59.mp4" - a cut of a cut.
+                # NOR THE STORY CUT (19 Oct 2026): "_127s__story.mp4" has no "_NNs.mp4"
+                # ending, so it was taken as the name and every RETIME re-render of a
+                # clip over 60s wrote into the story file - the clip itself never moved
+                # (WB +0.77s -> +0.77s, KT +2.18s -> +2.18s). Any "__" file is a sidecar.
                 if (f.endswith(".mp4") and c["slug"] in f
-                        and "__yt" not in f):
+                        and "__" not in f):
                     m = re.search(r"_(\d+)s\.mp4$", f)
                     if m and abs(int(m.group(1)) - dur) > 2:
                         break          # a different cut: it must be renamed
@@ -1541,11 +1871,42 @@ def run_series(key, spec, apply, only):
         if shots and len(shots) > 1:
             print(f"      {len(shots)} camera setup(s): "
                   + ", ".join(f"{s['cx']:.2f}" for s in shots))
-        bursts = render(src, dest, c["in"], c["out"], c["hook"], cues,
+        # PODCAST SCREENS (kt_layout.py, 17 Oct 2026): when Kevin sits in one panel of
+        # a stream layout, crop from inside his panel, never the middle of the screen.
+        lgeo = None
+        if not c.get("no_layout"):
+            try:
+                import kt_layout
+                lgeo, lwhy = kt_layout.panel_geo(src, float(c["in"]), float(c["out"]))
+                if lgeo:
+                    print(f"      {lwhy}")
+            except Exception as e:               # a measurement never costs a clip
+                sys.stderr.write(f"      layout check skipped: {type(e).__name__}: {e}\n")
+        # THE CINEMATIC OPENER (kt_opener.py): the plan names the shot ("opener":
+        # "basketball hoop net"); no key, no match or no field = the clip as before.
+        op = None
+        # OPENER_LIVE=on (repo variable) once Kamay approved the first automatic one;
+        # until then only preview (test) plans get openers (OPENER_PREVIEW, build_shard).
+        live = os.environ.get("OPENER_LIVE") == "on" or os.environ.get("OPENER_PREVIEW") == "1"
+        if c.get("opener") and apply and live:
+            try:
+                import kt_opener
+                op = kt_opener.pick(str(c["opener"]))
+            except Exception as e:
+                sys.stderr.write(f"      opener skipped: {type(e).__name__}: {e}\n")
+        # RE-AIMED CROP (1 Nov 2026, kt_batch_build REAIM): the posted frame missed the speaker,
+        # so this one render crops a fixed window centred on where the source shows the face.
+        if os.environ.get("CROP_CX"):
+            cx, shots, track, lgeo = float(os.environ["CROP_CX"]), None, [], None
+            print(f"      crop re-aimed at x={cx:.2f}")
+        # TRIAL VARIANT (1 Nov 2026): the same clip with only the hook changed (build_shard).
+        hook = os.environ["HOOK_OVERRIDE"].split("|") if os.environ.get("HOOK_OVERRIDE") else c["hook"]
+        bursts = render(src, dest, c["in"], c["out"], hook, cues,
                         cx, apply, zoom, c.get("hook_yt"), yt_win,
-                        c["slug"], c.get("fix"), shots, track)
+                        c["slug"], c.get("fix"), shots, track,
+                        (frames or {}).get("cuts"), opener=op, geo=lgeo)
         print(f"  {'rendered' if apply else 'plan'} {brand}/{name}  "
-              f"{bursts} bursts  hook={' / '.join(c['hook'][:2])}")
+              f"{bursts} bursts  hook={' / '.join(hook[:2])}")
         n += 1
     return n
 
