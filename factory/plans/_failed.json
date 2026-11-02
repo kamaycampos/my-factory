@@ -1,0 +1,23 @@
+{
+ "clips": {
+  "ep_v76l9y0/WHY-WANTING-MORE-ISNT-SELFISH": {
+   "plan": "ep_v76l9y0",
+   "source": "v76l9y0.mp4",
+   "brand": "KT_SUCCESS",
+   "tries": 1,
+   "why": [
+    "NOT QUEUED** `01_WHY-WANTING-MORE-ISNT-SELFISH_76s.mp4` - ends mid-thought on \"It was\"; sentence starts with no stop: \"better It\"; sentence starts with no stop: \"hole You\""
+   ],
+   "slug": "WHY-WANTING-MORE-ISNT-SELFISH",
+   "in": 271.0,
+   "out": 346.4,
+   "start_words": "Before I dive into some",
+   "end_words": "better because you are better",
+   "hook": [
+    "Why wanting more",
+    "isn't selfish"
+   ]
+  }
+ },
+ "attempts": {}
+}
