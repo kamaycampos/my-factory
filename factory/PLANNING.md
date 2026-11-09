@@ -11,6 +11,15 @@ on the second-chance backlog, hit the account's usage limit, and pushed nothing.
 each plan passes `check_plan.py`**, to the same branch - the merge job takes each push - so a run that is
 cut off still keeps the plans it finished.
 
+## VIRALITY IS THE JOB: EVERY CLIP IS ONE PEOPLE SEND (3 Nov 2026, Kamay: "make it a rule")
+Read `factory/VIRALITY.md`. Instagram's strongest signal with strangers is **sends per reach** (Mosseri),
+and KT's reach fell 103K -> 19K per 14 days while shares per reel fell 9.4 -> ~3 (skip rate flat). Every
+clip carries `"send"`: one line - who sends it to whom, and why ("a friend sends it to a friend: proof
+of what they argued about"), and the HIGH-AROUSAL emotion it rides: awe, anger (at being
+lied to) or anxiety (losing money / time) - never a calm lesson alone. Prefer the clip with the clearer
+send. `check_plan.py` refuses a clip without it. The trial reels now crown the hook with the most
+sends per reach, not the most views - read the winners in `state/variants.json`.
+
 ## Procedure
 1. `pip install -q opencv-python-headless pillow numpy 2>/dev/null` (so the hook lint can load).
 2. `python factory/routine_prep.py --max 4`. This prints the queue depth, downloads and decrypts the next unplanned episodes' transcripts into `work/`, and writes 30-second reading blocks for each.
@@ -43,15 +52,15 @@ teaching or a question; the machine adds the one true offer line from that file.
 DM does not send ("the cheat sheet", "my list", "I'll tell you"): the machine deletes such a sentence. On the
 live account, captions had promised 9 different freebies while the comment only ever sent one link.
 
-## Trial hooks: 7 hooks, 1 clip, every day (1 Nov 2026)
-In the MORNING run (before 15:00 UTC) only, pick the ONE strongest clip you plan (the newest episode's best
-when there is one) and add `"trial_hooks"`: exactly 7 alternatives to its hook, each `["line one", "line two"]`,
+## Trial hooks: 7 hooks on every clip (3 Nov 2026)
+Give EVERY clip you plan `"trial_hooks"`: exactly 7 alternatives to its hook, each `["line one", "line two"]`,
 six words in all, each a DIFFERENT lever and all true to the clip: (1) the biggest number or sum, (2) a villain
 named, (3) a surprising true fact, (4) what the viewer is missing, (5) a named person + outcome, (6) Kevin
 Trudeau by name, (7) your wildest true one. The factory renders all 7 on their own servers (only the hook
 changes) and posts them as Instagram Trial Reels (shown to non-followers only) once the clip itself has posted;
 48 h later `state/variants.json` holds each one's views and the winner. Read the last winners there before you
-write any hook. `check_plan.py` lints every trial hook like a normal hook. Instagram only; skip it when
+write any hook. Until one experiment has posted all 7 arms, `check_plan.py` allows trial hooks on ONE clip a
+plan (the strongest); after that, on every clip. Every trial hook is linted like a normal hook. Instagram only; skip it when
 Instagram is not connected.
 
 ## What makes a clip worth posting (Kamay's taste, learned from real numbers)
@@ -86,6 +95,15 @@ Instagram is not connected.
 - Double-check the ending by reading the next two lines of the transcript: if the next line is the payoff ("They gave me a gift."), your clip isn't finished yet.
 
 ## Hooks (two short lines)
+- **THE HOOK TEST (3 Nov 2026, Kamay: "the hooks should be perfect and so shocking and emotional
+  impacting and also truth and call for attention and curiosity").** Write 5 hooks for every clip, score
+  each on 4 tests, keep the best - never the first draft. **STOP:** line 1 alone stops a thumb (a
+  number with stakes, a named person or villain, a forbidden fact). **GAP:** it opens a question only
+  this clip answers. **FEEL:** it hits one emotion hard - fear, anger at being lied to, shame, longing,
+  hope; name it to yourself first. **TRUE:** the clip says it plainly. Weak ones from our own feed:
+  `One notch off / course costs you`, `How attitude creates / your money` (abstract, no picture);
+  `The one book every / billionaire read` (line 1 broken mid-phrase - `check_plan.py` refuses a line 1
+  ending on THE / YOUR / OF / TO / EVERY...). Never the same opening shape twice in one plan.
 - **Read `factory/HOOK_PATTERNS.md` before writing hooks.** It holds the pattern bank (result, time, effort, callout, contrarian, pain, mechanism, transformation, curiosity, controversy), the story arc that decides where a clip starts and ends, and the caption discipline. Use a different pattern for every clip in an episode.
 - **The hook must carry the clip's STRONGEST fact, not an incidental one.** 24 Sept 2026: a clip that
   contains "he changed one word", "over a million dollars before he turned 18", "$180 million in 18
