@@ -1563,4 +1563,3 @@ def audit_facebook(clips):
             if m.group(1) not in live:
                 bad.append(i)
     return bad
-# test line the updater must remove

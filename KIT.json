@@ -1,5 +1,5 @@
 {
- "version": "1.4.9",
+ "version": "1.5.0",
  "upstream": "kamaycampos/affiliate-factory",
  "changes": [
   "1.5.0: your factory updates itself - GitHub checks the original every few hours and every weekly plan checks again; nothing of yours is replaced",
